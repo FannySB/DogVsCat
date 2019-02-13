@@ -1,27 +1,60 @@
 from torchvision import transforms
 from torch.utils.data import DataLoader
+# from torch.utils import data
 from torchvision import datasets as Dataset
 import torch
 # from torch.optim import zero_grad
 import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
+from itertools import accumulate
+import matplotlib.pyplot as plt
+
+class Subset(torch.utils.data.Dataset):
+    def __init__(self, dataset, indices):
+        self.dataset = dataset
+        self.indices = indices
+
+    def __getitem__(self, idx):
+        return self.dataset[self.indices[idx]]
+
+    def __len__(self):
+        return len(self.indices)
+
+
+def random_split(dataset, lengths):
+    assert sum(lengths) == len(dataset)
+    print("Length :", lengths)
+    indices = torch.randperm(len(dataset))
+    return [Subset(dataset, indices[offset - length:offset])
+            for offset, length in zip(accumulate(lengths), lengths)]
+
 
 data_dir_train = 'dataset/trainset/'
 data_dir_test = 'dataset/testset/'
+
+# transforms = transforms.Compose([transforms.Resize(128),
+#                                  transforms.CenterCrop(128),
+#                                  transforms.ToTensor()]
+#                                 )
+
+# transforms = transforms.Compose([transforms.Grayscale(num_output_channels=1),
+#                                  transforms.ToTensor()])
+
 transforms = transforms.Compose([transforms.Resize(128),
-                                 transforms.CenterCrop(128),
-                                 transforms.ToTensor()]
-                                )
+                                 transforms.ToTensor()
+                                #  transforms.Normalize((0,0,0), (1,1,1))
+                                ])
+                            
+
 train_data = Dataset.ImageFolder(data_dir_train, transform=transforms)
-split_train_data, split_valid_data = Dataset.random_spit(train_data, [len(train_data)*0.80, len(train_data)*0.20])
+split_train_data, split_valid_data = random_split(train_data, [int(len(train_data)*0.80), len(train_data)-int(len(train_data)*0.80)])
 
 test_data = Dataset.ImageFolder(data_dir_test, transform=transforms)
 
-# train_loader_cat = DataLoader(train_data_cat, batch_size=32, shuffle=True)
-train_loader = DataLoader(train_data, batch_size=32, shuffle=True)
-# train_loader_dog = DataLoader(train_data_dog, batch_size=32, shuffle=True)
-test_loader = DataLoader(test_data, batch_size=32, shuffle=True)
+train_loader = DataLoader(split_train_data, batch_size=32, shuffle=True, drop_last=True)
+valid_loader = DataLoader(split_valid_data, batch_size=32, shuffle=True, drop_last=True)
+test_loader = DataLoader(test_data, batch_size=32, shuffle=False, drop_last=True)
 
 # check if CUDA is available
 train_on_gpu = torch.cuda.is_available()
@@ -70,17 +103,24 @@ def weight_init(m):
 
 
 model.apply(weight_init)
-learning_rate = 1e-4
+learning_rate = 1e-3
 optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
-# criterion = nn.CrossEntropyLoss().cuda()
 criterion = nn.BCELoss().cuda()
 
-n_epochs = 5  # you may increase this number to train a final model
+n_epochs = 100  # you may increase this number to train a final model
 valid_loss_min = np.Inf  # track change in validation loss
 from torch.autograd import Variable
 
+train_loss_hist = []
+valid_loss_hist = []
+
 for epoch in range(1, n_epochs + 1):
 
+    if epoch == 50:
+        learning_rate = 1e-4
+    if epoch == 100:
+        learning_rate = 1e-5
+        
     # keep track of training and validation loss
     train_loss = 0.0
     valid_loss = 0.0
@@ -90,6 +130,7 @@ for epoch in range(1, n_epochs + 1):
     ###################
     model.train()
     for data, target in train_loader:
+
         # move tensors to GPU if CUDA is available
         target = target.float()
 
@@ -100,6 +141,9 @@ for epoch in range(1, n_epochs + 1):
         # forward pass: compute predicted outputs by passing inputs to the model
         output = model(data)
         # calculate the batch loss
+        # print("Shape data:", data.size())
+        # print("Input = ", output.size())
+        # print("Target = ", target.size())
         loss = criterion(output, target)
         
         # backward pass: compute gradient of the loss with respect to model parameters
@@ -109,13 +153,14 @@ for epoch in range(1, n_epochs + 1):
         # update training loss
         train_loss += loss.item() * data.size(0)
     # print(((output.squeeze() > 0.5) == target.byte()).sum().item() / target.shape[0])
+    
 
     ######################
     # validate the model #
     ######################
     model.eval()
 
-    for data, target in test_loader:
+    for data, target in valid_loader:
 
         # move tensors to GPU if CUDA is available
         if train_on_gpu:
@@ -141,8 +186,11 @@ for epoch in range(1, n_epochs + 1):
 
     # calculate average losses
     train_loss = train_loss / len(train_loader.dataset)
-    valid_loss = valid_loss / len(test_loader.dataset)
-    accuracy = accuracy / len(test_loader.dataset)
+    valid_loss = valid_loss / len(valid_loader.dataset)
+    accuracy = accuracy / len(valid_loader.dataset)
+
+    train_loss_hist.append(train_loss)
+    valid_loss_hist.append(valid_loss)
 
     # print training/validation statistics
     print('Epoch: {} \tTraining Loss: {:.6f} \tValidation Loss: {:.6f}  \tAccuracy: {:.6f}  '.format(
@@ -155,3 +203,35 @@ for epoch in range(1, n_epochs + 1):
             valid_loss))
         torch.save(model.state_dict(), 'my:model.pt')
         valid_loss_min = valid_loss
+
+    
+    
+
+plt.plot(range(n_epochs), train_loss_hist, label="Training")
+plt.plot(range(n_epochs), valid_loss_hist, label="Validation")
+plt.legend()
+plt.savefig('Loss with normalize.png')
+
+f_out = open("submission.csv", "w+")
+f_out2 = open("submission2.csv", "w+")
+
+for data in test_loader:
+
+    # move tensors to GPU if CUDA is available
+    if train_on_gpu:
+        data = data.cuda()
+    # forward pass: compute predicted outputs by passing inputs to the model
+
+    output = model(data)
+    
+    for idx in range(len(output)):
+        if output == 0:
+            f_out.write(idx + ", Cat" )  
+            f_out2.write(idx + ", Dog" ) 
+        else:
+            f_out.write(idx + ", Dog" )  
+            f_out2.write(idx + ", Cat" )
+
+f_out.close()
+f_out2.close()
+
