@@ -46,15 +46,13 @@ transforms = transforms.Compose([transforms.Resize(128),
                                 #  transforms.Normalize((0,0,0), (1,1,1))
                                 ])
                             
-
 train_data = Dataset.ImageFolder(data_dir_train, transform=transforms)
 split_train_data, split_valid_data = random_split(train_data, [int(len(train_data)*0.80), len(train_data)-int(len(train_data)*0.80)])
 
-test_data = Dataset.ImageFolder(data_dir_test, transform=transforms)
 
 train_loader = DataLoader(split_train_data, batch_size=32, shuffle=True, drop_last=True)
 valid_loader = DataLoader(split_valid_data, batch_size=32, shuffle=True, drop_last=True)
-test_loader = DataLoader(test_data, batch_size=32, shuffle=False, drop_last=True)
+
 
 # check if CUDA is available
 train_on_gpu = torch.cuda.is_available()
@@ -70,7 +68,7 @@ class Net(nn.Module):
         self.pool = nn.MaxPool2d(2, 2)
         self.fc1 = nn.Linear(64 * 4 * 4 * 4 * 4, 64)
         self.fc2 = nn.Linear(64, 1)
-        self.dropout = nn.Dropout(0.1)
+        # self.dropout = nn.Dropout(0.1)
 
     def forward(self, x):
         # add sequence of convolutional and max pooling layers
@@ -78,9 +76,9 @@ class Net(nn.Module):
         x = self.pool(F.relu(self.conv2(x)))
         x = self.pool(F.relu(self.conv3(x)))
         x = x.view(-1, 64 * 4 * 4 * 4 * 4)
-        x = self.dropout(x)
+        # x = self.dropout(x)
         x = F.relu(self.fc1(x))
-        x = self.dropout(x)
+        # x = self.dropout(x)
         x = F.relu(self.fc2(x))
         x = F.sigmoid(x)
         return x
@@ -107,7 +105,7 @@ learning_rate = 1e-3
 optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
 criterion = nn.BCELoss().cuda()
 
-n_epochs = 100  # you may increase this number to train a final model
+n_epochs = 150  # you may increase this number to train a final model
 valid_loss_min = np.Inf  # track change in validation loss
 from torch.autograd import Variable
 
@@ -116,11 +114,11 @@ valid_loss_hist = []
 
 for epoch in range(1, n_epochs + 1):
 
-    if epoch == 50:
-        learning_rate = 1e-4
-    if epoch == 100:
-        learning_rate = 1e-5
-        
+    # if epoch == 50:
+    #     learning_rate = 1e-4
+    # if epoch == 100:
+    #     learning_rate = 1e-5
+
     # keep track of training and validation loss
     train_loss = 0.0
     valid_loss = 0.0
@@ -168,6 +166,9 @@ for epoch in range(1, n_epochs + 1):
         # forward pass: compute predicted outputs by passing inputs to the model
         target = target.float()
         output = model(data)
+
+        # print("output ", output)
+
         # calculate the batch loss
         loss = criterion(output, target.view_as(output))
         # update average validation loss
@@ -177,9 +178,13 @@ for epoch in range(1, n_epochs + 1):
         out = (output > t.cuda(async=True)).float() * 1
         # print(out)
 
+        # print("out ", out.t())
+        # print("target ", target)
         equals = target.float() == out.t()
+        # print("equals ", equals)
         # print(equals)
         # print(torch.sum(equals))
+
         accuracy += (torch.sum(equals).cpu().numpy())
     # print(equals)
     # print(target)
@@ -204,34 +209,52 @@ for epoch in range(1, n_epochs + 1):
         torch.save(model.state_dict(), 'my:model.pt')
         valid_loss_min = valid_loss
 
-    
-    
-
 plt.plot(range(n_epochs), train_loss_hist, label="Training")
 plt.plot(range(n_epochs), valid_loss_hist, label="Validation")
 plt.legend()
 plt.savefig('Loss with normalize.png')
 
+test_data = Dataset.ImageFolder(data_dir_test, transform=transforms)
+test_loader = DataLoader(test_data, batch_size=32, shuffle=False, drop_last=True)
+
 f_out = open("submission.csv", "w+")
 f_out2 = open("submission2.csv", "w+")
 
-for data in test_loader:
+######################
+# validate the model #
+######################
+model.eval()
 
-    # move tensors to GPU if CUDA is available
-    if train_on_gpu:
-        data = data.cuda()
+index = 0
+f_out.write("id,label\n")  
+f_out2.write("id,label\n") 
+
+for data, target in test_loader:
+
     # forward pass: compute predicted outputs by passing inputs to the model
+    # print("type data : ", type(data[0]))
+    # torch_data = torch.tensor(data)
 
-    output = model(data)
+    # if train_on_gpu:
+    data = data.cuda()
     
-    for idx in range(len(output)):
-        if output == 0:
-            f_out.write(idx + ", Cat" )  
-            f_out2.write(idx + ", Dog" ) 
+    # output = model(torch.FloatTensor(torch.stack(data)))
+    output = model(data)
+    t = Variable(torch.FloatTensor([0.5]))  # threshold
+    out = (output > t.cuda(async=True)).float() * 1
+    out_t = out.t()
+    
+
+    # print("output ", out_t)
+    for idx in range(len(out_t[0])):
+        index +=1
+
+        if out_t[0][idx] == 0.:
+            f_out.write(str(index) + ",Cat\n")  
+            f_out2.write(str(index) + ",Dog\n")
         else:
-            f_out.write(idx + ", Dog" )  
-            f_out2.write(idx + ", Cat" )
+            f_out.write(str(index) + ",Dog\n")  
+            f_out2.write(str(index) + ",Cat\n")
 
 f_out.close()
 f_out2.close()
-
