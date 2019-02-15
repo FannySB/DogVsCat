@@ -3,10 +3,12 @@ from torch.utils.data import DataLoader
 # from torch.utils import data
 from torchvision import datasets as Dataset
 import torch
+
 # from torch.optim import zero_grad
 import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.optim import lr_scheduler
 from itertools import accumulate
 import matplotlib.pyplot as plt
 
@@ -42,10 +44,17 @@ data_dir_test = 'dataset/testset/'
 #                                  transforms.ToTensor()])
 
 transforms = transforms.Compose([transforms.Resize(128),
-                                 transforms.ToTensor()
-                                #  transforms.Normalize((0,0,0), (1,1,1))
+                                 transforms.CenterCrop(128),
+                                 transforms.ToTensor(),
+                                 transforms.Normalize((0.5,0.5,0.5), (0.5,0.5,0.5))
                                 ])
-                            
+                                #  transforms.RandomResizedCrop(128),
+                                
+                                
+                                #  transforms.Grayscale(num_output_channels=3),
+                                #  transforms.Normalize((0,0,0), (1,1,1))
+                                # ])
+
 train_data = Dataset.ImageFolder(data_dir_train, transform=transforms)
 split_train_data, split_valid_data = random_split(train_data, [int(len(train_data)*0.80), len(train_data)-int(len(train_data)*0.80)])
 
@@ -101,23 +110,21 @@ def weight_init(m):
 
 
 model.apply(weight_init)
-learning_rate = 1e-3
+learning_rate = 10e-3
 optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
 criterion = nn.BCELoss().cuda()
 
-n_epochs = 150  # you may increase this number to train a final model
+n_epochs = 45  # you may increase this number to train a final model
 valid_loss_min = np.Inf  # track change in validation loss
 from torch.autograd import Variable
 
 train_loss_hist = []
 valid_loss_hist = []
 
+scheduler = lr_scheduler.StepLR(optimizer, step_size=15, gamma=0.1)
 for epoch in range(1, n_epochs + 1):
 
-    # if epoch == 50:
-    #     learning_rate = 1e-4
-    # if epoch == 100:
-    #     learning_rate = 1e-5
+    scheduler.step()
 
     # keep track of training and validation loss
     train_loss = 0.0
@@ -214,8 +221,18 @@ plt.plot(range(n_epochs), valid_loss_hist, label="Validation")
 plt.legend()
 plt.savefig('Loss with normalize.png')
 
+
+# transforms2 = transforms.Compose([transforms.Resize(128),
+#                                  transforms.RandomHorizontalFlip(),
+#                                  transforms.ToTensor()
+#                                 #  transforms.RandomResizedCrop(128),
+                                 
+#                                 #  transforms.Grayscale(num_output_channels=3),
+#                                 #  transforms.Normalize((0,0,0), (1,1,1))
+#                                 ])
+
 test_data = Dataset.ImageFolder(data_dir_test, transform=transforms)
-test_loader = DataLoader(test_data, batch_size=32, shuffle=False, drop_last=True)
+test_loader = DataLoader(test_data, batch_size=32, shuffle=False, drop_last=False)
 
 f_out = open("submission.csv", "w+")
 f_out2 = open("submission2.csv", "w+")
