@@ -1,5 +1,5 @@
-from torchvision import transforms
-from torch.utils.data import DataLoader
+from torchvision import transforms as Transforms
+from torch.utils.data import DataLoader, ConcatDataset
 # from torch.utils import data
 from torchvision import datasets as Dataset
 import torch
@@ -11,6 +11,7 @@ import torch.nn.functional as F
 from torch.optim import lr_scheduler
 from itertools import accumulate
 import matplotlib.pyplot as plt
+from PIL import Image
 
 class Subset(torch.utils.data.Dataset):
     def __init__(self, dataset, indices):
@@ -32,35 +33,91 @@ def random_split(dataset, lengths):
             for offset, length in zip(accumulate(lengths), lengths)]
 
 
-data_dir_train = 'dataset/trainset/'
-data_dir_test = 'dataset/testset/'
+# data_dir_train = 'dataset/trainset/'
+# data_dir_test = 'dataset/testset/'
+
+
 
 # transforms = transforms.Compose([transforms.Resize(128),
 #                                  transforms.CenterCrop(128),
-#                                  transforms.ToTensor()]
-#                                 )
+#                                  transforms.ToTensor(),
+#                                  transforms.Normalize((0.5,0.5,0.5), (0.5,0.5,0.5))
+#                                 ])
 
-# transforms = transforms.Compose([transforms.Grayscale(num_output_channels=1),
-#                                  transforms.ToTensor()])
+# train_data = Dataset.ImageFolder(data_dir_train, transform=transforms)
+# split_train_data, split_valid_data = random_split(train_data, [int(len(train_data)*0.80), len(train_data)-int(len(train_data)*0.80)])
 
-transforms = transforms.Compose([transforms.Resize(128),
-                                 transforms.CenterCrop(128),
-                                 transforms.ToTensor(),
-                                 transforms.Normalize((0.5,0.5,0.5), (0.5,0.5,0.5))
+# train_loader = DataLoader(split_train_data, batch_size=32, shuffle=True, drop_last=True)
+# valid_loader = DataLoader(split_valid_data, batch_size=32, shuffle=True, drop_last=True)
+
+
+str_trans = 'normal, crop100, gray, pad, rand_crop100, rotation'#
+print('transform:', str_trans)
+print('------ load data ------')
+data_dir_train = 'dataset/trainset/train'
+data_dir_valid = 'dataset/trainset/valid'
+data_dir_test = 'dataset/testset/'
+
+transforms = Transforms.Compose([Transforms.Resize(128),
+                                 Transforms.ToTensor()
+                                #  Transforms.Normalize((0.5,0.5,0.5), (0.5,0.5,0.5))
                                 ])
-                                #  transforms.RandomResizedCrop(128),
-                                
-                                
-                                #  transforms.Grayscale(num_output_channels=3),
-                                #  transforms.Normalize((0,0,0), (1,1,1))
-                                # ])
 
-train_data = Dataset.ImageFolder(data_dir_train, transform=transforms)
-split_train_data, split_valid_data = random_split(train_data, [int(len(train_data)*0.80), len(train_data)-int(len(train_data)*0.80)])
+train_data_normal = Dataset.ImageFolder(data_dir_train, transform=transforms)
 
+transforms = Transforms.Compose([Transforms.Resize(128),
+                                    Transforms.CenterCrop(100),
+                                    Transforms.Resize(128),
+                                    Transforms.ToTensor()
+                                    ])
 
-train_loader = DataLoader(split_train_data, batch_size=32, shuffle=True, drop_last=True)
-valid_loader = DataLoader(split_valid_data, batch_size=32, shuffle=True, drop_last=True)
+train_data_crop100 = Dataset.ImageFolder(data_dir_train, transform=transforms)
+
+transforms = Transforms.Compose([Transforms.Resize(128),
+                                    Transforms.Grayscale(num_output_channels=3),
+                                    Transforms.Resize(128),
+                                    Transforms.ToTensor()
+                                    ])
+
+train_data_gray = Dataset.ImageFolder(data_dir_train, transform=transforms)
+
+transforms = Transforms.Compose([Transforms.Resize(128),
+                                    Transforms.Pad(5),
+                                    Transforms.Resize(128),
+                                    Transforms.ToTensor()
+                                    ])
+
+train_data_pad = Dataset.ImageFolder(data_dir_train, transform=transforms)
+
+transforms = Transforms.Compose([Transforms.Resize(128),
+                                    Transforms.RandomCrop(100),
+                                    Transforms.Resize(128),
+                                    Transforms.ToTensor()
+                                    ])
+
+train_data_rand_crop100 = Dataset.ImageFolder(data_dir_train, transform=transforms)
+
+transforms = Transforms.Compose([Transforms.Resize(128),
+                                    Transforms.RandomRotation(90),
+                                    Transforms.Resize(128),
+                                    Transforms.ToTensor()
+                                    ])
+
+train_data_rand_rotation = Dataset.ImageFolder(data_dir_train, transform=transforms)
+
+transforms = Transforms.Compose([Transforms.Resize(128),
+                                    Transforms.ToTensor()
+                                    ])
+valid_data = Dataset.ImageFolder(data_dir_valid, transform=transforms)
+test_data = Dataset.ImageFolder(data_dir_test, transform=transforms)
+
+train_data = ConcatDataset([train_data_normal, train_data_crop100, train_data_gray, train_data_pad, train_data_rand_crop100, train_data_rand_rotation])#
+train_loader = DataLoader(
+    train_data, batch_size=32, shuffle=True, drop_last=True)
+valid_loader = DataLoader(
+    valid_data, batch_size=32, shuffle=True, drop_last=True)
+test_loader = DataLoader(test_data, batch_size=32,
+                            shuffle=False, drop_last=True)
 
 
 # check if CUDA is available
@@ -71,9 +128,9 @@ train_on_gpu = torch.cuda.is_available()
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
-        self.conv1 = nn.Conv2d(3, 32, 3, padding=1)
-        self.conv2 = nn.Conv2d(32, 32, 3, padding=1)
-        self.conv3 = nn.Conv2d(32, 64, 3, padding=1)
+        self.conv1 = nn.Conv2d(3, 32, 2, padding=1)
+        self.conv2 = nn.Conv2d(32, 16, 3, padding=2)
+        self.conv3 = nn.Conv2d(16, 64, 3, padding=1)
         self.pool = nn.MaxPool2d(2, 2)
         self.fc1 = nn.Linear(64 * 4 * 4 * 4 * 4, 64)
         self.fc2 = nn.Linear(64, 1)
@@ -89,7 +146,7 @@ class Net(nn.Module):
         x = F.relu(self.fc1(x))
         # x = self.dropout(x)
         x = F.relu(self.fc2(x))
-        x = F.sigmoid(x)
+        x = F.softmax(x)
         return x
 
 
@@ -112,16 +169,17 @@ def weight_init(m):
 model.apply(weight_init)
 learning_rate = 10e-3
 optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
+# criterion = nn.BCEWithLogitsLoss().cuda()
 criterion = nn.BCELoss().cuda()
 
-n_epochs = 45  # you may increase this number to train a final model
+n_epochs = 1  # you may increase this number to train a final model
 valid_loss_min = np.Inf  # track change in validation loss
 from torch.autograd import Variable
 
 train_loss_hist = []
 valid_loss_hist = []
 
-scheduler = lr_scheduler.StepLR(optimizer, step_size=15, gamma=0.1)
+scheduler = lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
 for epoch in range(1, n_epochs + 1):
 
     scheduler.step()
@@ -174,7 +232,9 @@ for epoch in range(1, n_epochs + 1):
         target = target.float()
         output = model(data)
 
-        # print("output ", output)
+
+        
+        print("output size", output.size())
 
         # calculate the batch loss
         loss = criterion(output, target.view_as(output))
@@ -213,26 +273,14 @@ for epoch in range(1, n_epochs + 1):
         print('Validation loss decreased ({:.6f} --> {:.6f}).  Saving model ...'.format(
             valid_loss_min,
             valid_loss))
-        torch.save(model.state_dict(), 'my:model.pt')
+        # torch.save(model.state_dict(), 'my:model.pt')
+        torch.save(model, 'my:model.pt')
         valid_loss_min = valid_loss
 
 plt.plot(range(n_epochs), train_loss_hist, label="Training")
 plt.plot(range(n_epochs), valid_loss_hist, label="Validation")
 plt.legend()
 plt.savefig('Loss with normalize.png')
-
-
-# transforms2 = transforms.Compose([transforms.Resize(128),
-#                                  transforms.RandomHorizontalFlip(),
-#                                  transforms.ToTensor()
-#                                 #  transforms.RandomResizedCrop(128),
-                                 
-#                                 #  transforms.Grayscale(num_output_channels=3),
-#                                 #  transforms.Normalize((0,0,0), (1,1,1))
-#                                 ])
-
-test_data = Dataset.ImageFolder(data_dir_test, transform=transforms)
-test_loader = DataLoader(test_data, batch_size=32, shuffle=False, drop_last=False)
 
 f_out = open("submission.csv", "w+")
 f_out2 = open("submission2.csv", "w+")
@@ -254,9 +302,10 @@ for data, target in test_loader:
 
     # if train_on_gpu:
     data = data.cuda()
-    
+
     # output = model(torch.FloatTensor(torch.stack(data)))
     output = model(data)
+    # results = torch.nn.Softmax(output)
     t = Variable(torch.FloatTensor([0.5]))  # threshold
     out = (output > t.cuda(async=True)).float() * 1
     out_t = out.t()
