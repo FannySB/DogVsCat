@@ -1,17 +1,22 @@
 from torchvision import transforms as Transforms
-from torch.utils.data import DataLoader, ConcatDataset
-# from torch.utils import data
 from torchvision import datasets as Dataset
+import torchvision.models as models
+from PIL import Image
+
+from torch.utils.data import DataLoader, ConcatDataset
+import torch.utils.data as data
+import torch.nn.functional as F
+import torch.nn as nn
+from torch.optim import lr_scheduler
 import torch
 
-# from torch.optim import zero_grad
 import numpy as np
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.optim import lr_scheduler
-from itertools import accumulate
 import matplotlib.pyplot as plt
-from PIL import Image
+from itertools import accumulate
+
+import os.path
+import os
+
 
 class Subset(torch.utils.data.Dataset):
     def __init__(self, dataset, indices):
@@ -33,9 +38,30 @@ def random_split(dataset, lengths):
             for offset, length in zip(accumulate(lengths), lengths)]
 
 
+class TestImageFolder(torch.utils.data.Dataset):
+    def __init__(self, root, transform):
+        images = []
+        for filename in os.listdir(root):
+            if filename.endswith('jpg'):
+                images.append('{}'.format(filename))
+
+        self.root = root
+        self.imgs = images
+        self.transform = transform
+
+    def __getitem__(self, index):
+        filename = self.imgs[index]
+        img = Image.open(os.path.join(self.root, filename))
+        if self.transform is not None:
+            img = self.transform(img)
+        return img, filename
+
+    def __len__(self):
+        return len(self.imgs)
+
+
 # data_dir_train = 'dataset/trainset/'
 # data_dir_test = 'dataset/testset/'
-
 
 
 # transforms = transforms.Compose([transforms.Resize(128),
@@ -51,74 +77,76 @@ def random_split(dataset, lengths):
 # valid_loader = DataLoader(split_valid_data, batch_size=32, shuffle=True, drop_last=True)
 
 
-str_trans = 'normal, crop100, gray, pad, rand_crop100, rotation'#
-print('transform:', str_trans)
-print('------ load data ------')
+str_trans = 'normal, crop100, gray, pad, rand_crop100, rotation'  #
+# print('transform:', str_trans)
+print('1------ load data ------')
 data_dir_train = 'dataset/trainset/train'
 data_dir_valid = 'dataset/trainset/valid'
-data_dir_test = 'dataset/testset/'
+data_dir_test = 'dataset/testset/testset/test'
 
 transforms = Transforms.Compose([Transforms.Resize(128),
                                  Transforms.ToTensor()
-                                #  Transforms.Normalize((0.5,0.5,0.5), (0.5,0.5,0.5))
-                                ])
+                                 #  Transforms.Normalize((0.5,0.5,0.5), (0.5,0.5,0.5))
+                                 ])
 
 train_data_normal = Dataset.ImageFolder(data_dir_train, transform=transforms)
 
 transforms = Transforms.Compose([Transforms.Resize(128),
-                                    Transforms.CenterCrop(100),
-                                    Transforms.Resize(128),
-                                    Transforms.ToTensor()
-                                    ])
+                                 Transforms.CenterCrop(100),
+                                 Transforms.Resize(128),
+                                 Transforms.ToTensor()
+                                 ])
 
 train_data_crop100 = Dataset.ImageFolder(data_dir_train, transform=transforms)
 
 transforms = Transforms.Compose([Transforms.Resize(128),
-                                    Transforms.Grayscale(num_output_channels=3),
-                                    Transforms.Resize(128),
-                                    Transforms.ToTensor()
-                                    ])
+                                 Transforms.Grayscale(num_output_channels=3),
+                                 Transforms.Resize(128),
+                                 Transforms.ToTensor()
+                                 ])
 
 train_data_gray = Dataset.ImageFolder(data_dir_train, transform=transforms)
 
 transforms = Transforms.Compose([Transforms.Resize(128),
-                                    Transforms.Pad(5),
-                                    Transforms.Resize(128),
-                                    Transforms.ToTensor()
-                                    ])
+                                 Transforms.Pad(5),
+                                 Transforms.Resize(128),
+                                 Transforms.ToTensor()
+                                 ])
 
 train_data_pad = Dataset.ImageFolder(data_dir_train, transform=transforms)
 
 transforms = Transforms.Compose([Transforms.Resize(128),
-                                    Transforms.RandomCrop(100),
-                                    Transforms.Resize(128),
-                                    Transforms.ToTensor()
-                                    ])
+                                 Transforms.RandomCrop(100),
+                                 Transforms.Resize(128),
+                                 Transforms.ToTensor()
+                                 ])
 
 train_data_rand_crop100 = Dataset.ImageFolder(data_dir_train, transform=transforms)
 
 transforms = Transforms.Compose([Transforms.Resize(128),
-                                    Transforms.RandomRotation(90),
-                                    Transforms.Resize(128),
-                                    Transforms.ToTensor()
-                                    ])
+                                 Transforms.RandomRotation(90),
+                                 Transforms.Resize(128),
+                                 Transforms.ToTensor()
+                                 ])
 
 train_data_rand_rotation = Dataset.ImageFolder(data_dir_train, transform=transforms)
 
 transforms = Transforms.Compose([Transforms.Resize(128),
-                                    Transforms.ToTensor()
-                                    ])
+                                 Transforms.ToTensor(),
+                                 Transforms.Lambda(lambda x: x.expand(3, 128, 128) if len(x) == 1 else x)
+                                 ])
 valid_data = Dataset.ImageFolder(data_dir_valid, transform=transforms)
-test_data = Dataset.ImageFolder(data_dir_test, transform=transforms)
+test_data = TestImageFolder(data_dir_test, transforms)
+# test_data = Dataset.ImageFolder(data_dir_test, transforms)
 
-train_data = ConcatDataset([train_data_normal, train_data_crop100, train_data_gray, train_data_pad, train_data_rand_crop100, train_data_rand_rotation])#
+train_data = ConcatDataset(
+    [train_data_normal, train_data_crop100, train_data_gray, train_data_pad, train_data_rand_crop100,
+     train_data_rand_rotation])  #
 train_loader = DataLoader(
     train_data, batch_size=32, shuffle=True, drop_last=True)
 valid_loader = DataLoader(
     valid_data, batch_size=32, shuffle=True, drop_last=True)
-test_loader = DataLoader(test_data, batch_size=32,
-                            shuffle=False, drop_last=True)
-
+test_loader = DataLoader(test_data)
 
 # check if CUDA is available
 train_on_gpu = torch.cuda.is_available()
@@ -151,7 +179,6 @@ class Net(nn.Module):
 
 
 model = Net()
-print(model)
 
 # move tensors to GPU if CUDA is available
 if train_on_gpu:
@@ -172,7 +199,7 @@ optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
 # criterion = nn.BCEWithLogitsLoss().cuda()
 criterion = nn.BCELoss().cuda()
 
-n_epochs = 1  # you may increase this number to train a final model
+n_epochs = 10  # you may increase this number to train a final model
 valid_loss_min = np.Inf  # track change in validation loss
 from torch.autograd import Variable
 
@@ -192,6 +219,9 @@ for epoch in range(1, n_epochs + 1):
     # train the model #
     ###################
     model.train()
+
+    print('------ train ------')
+
     for data, target in train_loader:
 
         # move tensors to GPU if CUDA is available
@@ -208,7 +238,7 @@ for epoch in range(1, n_epochs + 1):
         # print("Input = ", output.size())
         # print("Target = ", target.size())
         loss = criterion(output, target)
-        
+
         # backward pass: compute gradient of the loss with respect to model parameters
         loss.backward()
         # perform a single optimization step (parameter update)
@@ -216,12 +246,13 @@ for epoch in range(1, n_epochs + 1):
         # update training loss
         train_loss += loss.item() * data.size(0)
     # print(((output.squeeze() > 0.5) == target.byte()).sum().item() / target.shape[0])
-    
 
     ######################
     # validate the model #
     ######################
     model.eval()
+
+    print('------ valid ------')
 
     for data, target in valid_loader:
 
@@ -231,10 +262,6 @@ for epoch in range(1, n_epochs + 1):
         # forward pass: compute predicted outputs by passing inputs to the model
         target = target.float()
         output = model(data)
-
-
-        
-        print("output size", output.size())
 
         # calculate the batch loss
         loss = criterion(output, target.view_as(output))
@@ -290,37 +317,40 @@ f_out2 = open("submission2.csv", "w+")
 ######################
 model.eval()
 
-index = 0
-f_out.write("id,label\n")  
-f_out2.write("id,label\n") 
+f_out.write("id,label\n")
+f_out2.write("id,label\n")
 
-for data, target in test_loader:
+print('------ test ------')
+
+for i, (images, filepath) in enumerate(test_loader):
+
+    # pop extension, treat as id to map
+    filepath = os.path.splitext(os.path.basename(filepath[0]))[0]
+    filepath = int(filepath)
 
     # forward pass: compute predicted outputs by passing inputs to the model
     # print("type data : ", type(data[0]))
     # torch_data = torch.tensor(data)
 
     # if train_on_gpu:
-    data = data.cuda()
+    data = images.cuda()
 
     # output = model(torch.FloatTensor(torch.stack(data)))
     output = model(data)
-    # results = torch.nn.Softmax(output)
-    t = Variable(torch.FloatTensor([0.5]))  # threshold
-    out = (output > t.cuda(async=True)).float() * 1
-    out_t = out.t()
-    
+    # # results = torch.nn.Softmax(output)
+    # t = Variable(torch.FloatTensor([0.5]))  # threshold
+    # out = (output > t.cuda(async=True)).float() * 1
+    # out_t = out.t()
+    for idx in range(len(output[0])):
 
-    # print("output ", out_t)
-    for idx in range(len(out_t[0])):
-        index +=1
-
-        if out_t[0][idx] == 0.:
-            f_out.write(str(index) + ",Cat\n")  
-            f_out2.write(str(index) + ",Dog\n")
+        if output[0][idx] == 1.:
+            f_out.write(str(filepath) + ",Cat\n")
+            f_out2.write(str(filepath) + ",Dog\n")
         else:
-            f_out.write(str(index) + ",Dog\n")  
-            f_out2.write(str(index) + ",Cat\n")
+            f_out.write(str(filepath) + ",Dog\n")
+            f_out2.write(str(filepath) + ",Cat\n")
 
 f_out.close()
 f_out2.close()
+
+print('------ end ------')
